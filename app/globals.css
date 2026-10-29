@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/* Suwathe brand colours (same as the website) */
+@theme {
+  --color-brand: #0a66d8;
+  --color-brand-dark: #071b3d;
+  --color-brand-soft: #e3f0fd;
+  --color-accent: #22c4f4;
+  --color-paper: #f4f7fc;
+  --color-ink: #0a1a33;
+  --color-muted: #5a6880;
+  --color-line: #dde6f2;
+  --color-wa: #1fa855;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Shared form styles */
+.field {
+  display: block;
+  width: 100%;
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.7rem 0.9rem;
+  font-size: 1rem;
+  box-shadow: inset 0 0 0 1px var(--color-line);
+  outline: none;
+}
+.field:focus {
+  box-shadow: inset 0 0 0 2px var(--color-brand);
+}
+.label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  padding: 0.7rem 1.2rem;
+  font-weight: 700;
+  background: var(--color-brand);
+  color: #fff;
+}
+.btn:hover {
+  background: #0857bb;
+}
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  padding: 0.65rem 1.1rem;
+  font-weight: 600;
+  background: #fff;
+  color: var(--color-ink);
+  box-shadow: inset 0 0 0 1px var(--color-line);
+}
+.btn-ghost:hover {
+  box-shadow: inset 0 0 0 1px var(--color-brand);
+}
+.card {
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--color-line);
+}
