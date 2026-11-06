@@ -9,7 +9,7 @@ export type FormState = { error?: string; ok?: string; username?: string } | und
 export async function login(_: FormState, form: FormData): Promise<FormState> {
   const username = String(form.get("username") ?? "");
   const password = String(form.get("password") ?? "");
-  if (!username || !password) return { error: "Enter your username and password.", username };
+  if (!username || !password) return { error: "Enter your mobile number (or username) and password.", username };
   const res = await checkLogin(username, password);
   if ("error" in res) return { error: res.error, username };
   await createSession(res.userId);

@@ -8,8 +8,8 @@ export function LoginForm() {
   return (
     <form action={action} className="space-y-4">
       <div>
-        <label htmlFor="username" className="label">Username</label>
-        <input id="username" name="username" autoComplete="username" autoCapitalize="none" required className="field" defaultValue={state?.username ?? ""} key={state?.username ?? ""} />
+        <label htmlFor="username" className="label">Mobile number or username</label>
+        <input id="username" name="username" autoComplete="username" autoCapitalize="none" inputMode="text" placeholder="98765 43210" required className="field" defaultValue={state?.username ?? ""} key={state?.username ?? ""} />
       </div>
       <div>
         <label htmlFor="password" className="label">Password</label>

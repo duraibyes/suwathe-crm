@@ -13,6 +13,9 @@ export default async function AccountPage() {
       <PageTitle title="Account" sub={`${user.name} · @${user.username} · ${user.role === "admin" ? "Admin" : "Staff"}`} />
       <ul className="card divide-y divide-line overflow-hidden">
         {user.role === "admin" && (
+          <li><Link href="/website" className="flex items-center justify-between px-4 py-4 font-semibold">Website: prices, offers & blog <span className="text-muted">→</span></Link></li>
+        )}
+        {user.role === "admin" && (
           <li><Link href="/users" className="flex items-center justify-between px-4 py-4 font-semibold">Staff accounts <span className="text-muted">→</span></Link></li>
         )}
         <li><Link href="/change-password" className="flex items-center justify-between px-4 py-4 font-semibold">Change password <span className="text-muted">→</span></Link></li>

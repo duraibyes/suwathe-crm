@@ -23,6 +23,8 @@ export default function Nav({ name, admin }: { name: string; admin: boolean }) {
     { href: "/renewals", k: "renewals", label: "Renewals" },
     { href: "/account", k: "more", label: admin ? "Account & staff" : "Account" },
   ];
+  // Website admin: in the desktop bar for admins (on phones it's under Account)
+  const desktop = admin ? [...items.slice(0, 4), { href: "/website", k: "web", label: "Website" }, items[4]] : items;
   const active = (href: string) => (href === "/" ? path === "/" : href === "/leads" ? path === "/leads" || (path.startsWith("/leads/") && path !== "/leads/new") : path.startsWith(href) || (href === "/account" && path.startsWith("/users")));
 
   return (
@@ -39,7 +41,7 @@ export default function Nav({ name, admin }: { name: string; admin: boolean }) {
             </span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex" aria-label="Main">
-            {items.map((i) => (
+            {desktop.map((i) => (
               <Link key={i.href} href={i.href} aria-current={active(i.href) ? "page" : undefined}
                 className={`rounded-full px-3.5 py-1.5 text-sm font-semibold ${i.k === "add" ? "bg-accent text-brand-dark" : active(i.href) ? "bg-white/15" : "text-white/75 hover:text-white"}`}>
                 {i.k === "add" ? "+ Add lead" : i.label}

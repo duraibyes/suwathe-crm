@@ -78,10 +78,14 @@ export async function requireAdmin() {
 // Returns an error message, or null on success.
 export async function checkLogin(username: string, password: string): Promise<{ error: string } | { userId: number }> {
   const u = await one<{ id: number; password_hash: string; active: boolean; failed_logins: number; locked_until: Date | null }>(
-    "SELECT id, password_hash, active, failed_logins, locked_until FROM users WHERE lower(username) = lower($1)",
-    [username.trim()],
+    // username, or a mobile number (last 10 digits match, so +91 / spaces don't matter)
+    `SELECT id, password_hash, active, failed_logins, locked_until FROM users
+      WHERE lower(username) = lower($1)
+         OR (length($2::text) = 10 AND right(regexp_replace(coalesce(phone, ''), '\\D', '', 'g'), 10) = $2::text)
+      ORDER BY (lower(username) = lower($1)) DESC LIMIT 1`,
+    [username.trim(), username.replace(/\D/g, "").slice(-10)],
   );
-  const generic = { error: "Wrong username or password." };
+  const generic = { error: "Wrong mobile number / username or password." };
   if (!u || !u.active) {
     await bcrypt.compare(password, "$2b$10$RocoSon7wYlO3KDE1FJu7.ARxLAX4YaufFC1F/tzMVeL4M3tbtz0u"); // even out timing so unknown usernames aren't detectable
     return generic;

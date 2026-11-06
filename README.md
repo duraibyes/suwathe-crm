@@ -15,6 +15,18 @@ Built with Next.js 16, Tailwind CSS 4 and PostgreSQL (Neon).
 - **Staff**: admin adds staff with a temporary password; everyone must set their own password at first sign-in. Staff see leads assigned to them, created by them, or unassigned. Admin sees everything.
 - **Security**: passwords hashed with bcrypt, sessions stored in the database (httpOnly cookie), account locks for 15 minutes after 5 wrong passwords, every page and action checks the signed-in user.
 
+## Website admin (Website menu, admins only)
+
+Edits suwathetechsolutions.com without touching code:
+
+- **Packages**: names, prices, who it's for, what's included, "Starting at", Most popular.
+- **Offers**: festival offers with dates and % per package; they switch on and off by themselves.
+- **Blog**: write posts in Markdown, pick one of three designs (Classic, Magazine, Step-by-step guide), preview, publish.
+
+The website reads `/api/public/site-content` (public: packages, offers, published posts only) every hour, or straight away when **Publish changes now** is pressed. For that button, add a `GITHUB_DISPATCH_TOKEN` environment variable in Vercel: a fine-grained GitHub token for `duraibyes/suwathe-website` with **Contents: Read and write**.
+
+Sign in with the mobile number (username or mobile number both work).
+
 ## Deploy on Vercel + Neon (one time)
 
 1. **Neon**: create a project (e.g. `suwathe-crm`). On the dashboard, open **Connect**, keep **Connection pooling** on, and copy the connection string.
