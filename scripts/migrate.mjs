@@ -215,6 +215,20 @@ const steps = [
     ('newyear', 'New Year offer', 'புத்தாண்டு சலுகை', 'Happy New Year', 'இனிய புத்தாண்டு நல்வாழ்த்துகள்', '2026-12-29', '2027-01-05', 5, 10, 10, 5, 5);
     `,
   ],
+  [
+    "005_ecom_starting_price",
+    `
+    -- 16 Nov 2026: the e-commerce price is a starting price. Real shops need
+    -- courier, offers, delivery code etc. as add-ons, so the site shows
+    -- "Starting at ₹34,999" with what's included. Still editable under Website.
+    UPDATE site_packages
+       SET starting_at = TRUE,
+           includes = E'Up to 50 initial products, with size / weight options\nProduct catalogue & product detail pages\nShopping cart & checkout\nPayment gateway connection (Razorpay or similar)\nCustomer login & order history\nOrder management with order status\nAdmin to manage products, stock and orders\nResponsive mobile design\nBasic SEO\nHelp opening your payment gateway account\nTesting and deployment',
+           days = '3–5 weeks',
+           updated_at = now()
+     WHERE id = 'ecom';
+    `,
+  ],
 ];
 
 // First admin (only used on an empty database). Signs in with the mobile number.
