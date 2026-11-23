@@ -3,6 +3,7 @@
 // Needs DATABASE_URL (Neon connection string). Without it, it does nothing.
 import pg from "pg";
 import { seedPosts } from "./blog-seed-2026-11.mjs";
+import { seedPostsB } from "./blog-seed-2026-11b.mjs";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -249,6 +250,20 @@ const steps = [
     // web address that already exists, so nothing written in the CRM is overwritten.
     async (db) => {
       for (const p of seedPosts) {
+        await db.query(
+          `INSERT INTO blog_posts (slug, title, excerpt, layout, body, tags, status, published_on, publish_at, seo_title, seo_description, author)
+           VALUES ($1, $2, $3, $4, $5, $6, 'published', ($7::timestamptz AT TIME ZONE 'Asia/Kolkata')::date, $7::timestamptz, $8, $9, 'Durairaj S')
+           ON CONFLICT (slug) DO NOTHING`,
+          [p.slug, p.title, p.excerpt, p.layout, p.body.trim(), p.tags, p.at, p.seoTitle, p.seoDescription],
+        );
+      }
+    },
+  ],
+  [
+    "008_blog_posts_11_to_20",
+    // 23 Nov 2026: 10 more posts, one a day at 9:00 am from 27 Nov to 6 Dec.
+    async (db) => {
+      for (const p of seedPostsB) {
         await db.query(
           `INSERT INTO blog_posts (slug, title, excerpt, layout, body, tags, status, published_on, publish_at, seo_title, seo_description, author)
            VALUES ($1, $2, $3, $4, $5, $6, 'published', ($7::timestamptz AT TIME ZONE 'Asia/Kolkata')::date, $7::timestamptz, $8, $9, 'Durairaj S')
