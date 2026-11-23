@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { one } from "@/lib/db";
-import { LAYOUTS, type BlogPost } from "@/lib/website";
+import { LAYOUTS, isScheduled, istDateTime, istLocalInput, type BlogPost } from "@/lib/website";
 import BlogEditor from "@/components/BlogEditor";
 import { PageTitle } from "@/components/ui";
 import { WebsiteTabs } from "@/components/WebsiteUI";
@@ -17,12 +17,17 @@ export default async function EditPost({ params, searchParams }: { params: Promi
   if (!/^\d+$/.test(id)) notFound();
   const post = await one<BlogPost>("SELECT * FROM blog_posts WHERE id = $1", [Number(id)]);
   if (!post) notFound();
-  const { updated_at: _u, ...plain } = post;
+  const { updated_at: _u, publish_at, ...plain } = post;
+  const scheduled = isScheduled(post);
+  const when = { local: publish_at ? istLocalInput(publish_at) : "", label: publish_at ? istDateTime(publish_at) : null, scheduled };
   return (
     <div>
-      <PageTitle title={post.status === "published" ? "Edit post" : "Draft"} sub={post.status === "published" ? `suwathetechsolutions.com/blog/${post.slug}/` : "Not on the website yet"} />
+      <PageTitle
+        title={scheduled ? "Scheduled post" : post.status === "published" ? "Edit post" : "Draft"}
+        sub={scheduled ? `Goes live ${when.label} · /blog/${post.slug}/` : post.status === "published" ? `suwathetechsolutions.com/blog/${post.slug}/` : "Not on the website yet"}
+      />
       <WebsiteTabs active="blog" />
-      <BlogEditor key={`${post.id}-${post.slug}-${post.status}`} post={plain} layouts={LAYOUTS} saved={saved} error={error} />
+      <BlogEditor key={`${post.id}-${post.slug}-${post.status}`} post={plain} when={when} layouts={LAYOUTS} saved={saved} error={error} />
     </div>
   );
 }

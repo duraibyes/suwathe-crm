@@ -9,6 +9,8 @@ type Post = {
   layout: string; body: string; tags: string; status: string; published_on: string | null;
   seo_title: string | null; seo_description: string | null; author: string;
 };
+// When the post goes live: "YYYY-MM-DDTHH:mm" in India time (or ""), and a friendly label.
+type When = { local: string; label: string | null; scheduled: boolean };
 type Layout = { id: string; en: string; desc: string };
 
 const slugify = (s: string) =>
@@ -39,7 +41,11 @@ function LayoutThumb({ id }: { id: string }) {
   );
 }
 
-export default function BlogEditor({ post, layouts, saved, error }: { post?: Post; layouts: readonly Layout[]; saved?: string; error?: string }) {
+// Is "YYYY-MM-DDTHH:mm" (India time) still in the future?
+const isLater = (v: string) => !!v && Date.parse(`${v}:00+05:30`) > Date.now();
+
+export default function BlogEditor({ post, when, layouts, saved, error }: { post?: Post; when?: When; layouts: readonly Layout[]; saved?: string; error?: string }) {
+  const [at, setAt] = useState(when?.local ?? "");
   const [title, setTitle] = useState(post?.title ?? "");
   const [slug, setSlug] = useState(post?.slug ?? "");
   const [slugTouched, setSlugTouched] = useState(!!post);
@@ -129,19 +135,33 @@ export default function BlogEditor({ post, layouts, saved, error }: { post?: Pos
           <div className="sm:col-span-2"><label className="label" htmlFor="seo_description">Google description (optional)</label><textarea id="seo_description" name="seo_description" defaultValue={post?.seo_description ?? ""} maxLength={300} rows={2} className="field" /></div>
           <div><label className="label" htmlFor="tags">Tags (comma separated)</label><input id="tags" name="tags" defaultValue={post?.tags ?? ""} className="field" placeholder="clinic, SEO" /></div>
           <div><label className="label" htmlFor="author">Author</label><input id="author" name="author" defaultValue={post?.author ?? "Durairaj S"} className="field" /></div>
-          <div><label className="label" htmlFor="published_on">Publish date</label><input id="published_on" name="published_on" type="date" defaultValue={post?.published_on ?? ""} className="field" /></div>
         </div>
       </details>
+
+      <section className="card space-y-2 p-5">
+        <label className="label" htmlFor="publish_at">Go live on (date & time, India)</label>
+        <div className="flex flex-wrap items-center gap-2">
+          <input id="publish_at" name="publish_at" type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} className="field max-w-xs" />
+          {at && <button type="button" onClick={() => setAt("")} className="text-sm font-semibold text-muted underline">Clear</button>}
+        </div>
+        <p className="text-xs text-muted">
+          {published && when?.scheduled
+            ? `Scheduled: goes on the website by itself on ${when.label}.`
+            : published
+              ? `Live on the website${when?.label ? ` since ${when.label}` : ""}.`
+              : "Leave empty to publish straight away, or pick a later time to schedule it."}
+        </p>
+      </section>
 
       <div className="sticky bottom-20 z-10 flex flex-wrap gap-3 rounded-2xl bg-white/95 p-3 shadow-lg ring-1 ring-line backdrop-blur md:bottom-4">
         {published ? (
           <>
             <button name="intent" value="save" className="btn">Save changes</button>
-            <button name="intent" value="draft" className="btn-ghost">Unpublish</button>
+            <button name="intent" value="draft" className="btn-ghost">{when?.scheduled ? "Cancel schedule (back to draft)" : "Unpublish"}</button>
           </>
         ) : (
           <>
-            <button name="intent" value="publish" className="btn">Publish</button>
+            <button name="intent" value="publish" className="btn">{isLater(at) ? "Schedule" : "Publish now"}</button>
             <button name="intent" value="save" className="btn-ghost">Save draft</button>
           </>
         )}

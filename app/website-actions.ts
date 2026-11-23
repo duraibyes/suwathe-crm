@@ -14,6 +14,8 @@ const int = (f: FormData, k: string) => {
 };
 const pct = (f: FormData, k: string) => Math.max(0, Math.min(50, int(f, k) ?? 0));
 const isDate = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+// "YYYY-MM-DDTHH:mm" from <input type="datetime-local">, read as India time
+const istAt = (v: string) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) && !isNaN(Date.parse(`${v}:00+05:30`)) ? `${v}:00+05:30` : null);
 const done = (path: string, msg: string) => redirect(`${path}?saved=${encodeURIComponent(msg)}`);
 const fail = (path: string, msg: string) => redirect(`${path}?error=${encodeURIComponent(msg)}`);
 
@@ -94,7 +96,7 @@ export async function savePost(f: FormData) {
   const publish = str(f, "intent") === "publish" ? true : str(f, "intent") === "draft" ? false : null;
   const cover = str(f, "cover_url", 500);
   if (cover && !/^https:\/\//.test(cover)) fail(back, "The cover photo link must start with https://");
-  const pubDate = str(f, "published_on");
+  const at = istAt(str(f, "publish_at"));
   const taken = await one<{ id: number }>("SELECT id FROM blog_posts WHERE slug = $1 AND id <> coalesce($2, -1)", [slug, id]);
   if (taken) fail(back, "Another post already uses that web address");
 
@@ -117,18 +119,67 @@ export async function savePost(f: FormData) {
     );
     postId = row!.id;
   }
+  // Publish: go live at the chosen date & time (India), or right now if none is given.
+  // A time in the future makes it a scheduled post; the website picks it up after that time.
+  const SET_DATE = "published_on = (publish_at AT TIME ZONE 'Asia/Kolkata')::date";
   if (publish === true) {
-    await query(
-      "UPDATE blog_posts SET status = 'published', published_on = coalesce($2::date, published_on, (now() AT TIME ZONE 'Asia/Kolkata')::date) WHERE id = $1",
-      [postId, isDate(pubDate) ? pubDate : null],
-    );
+    await query(`UPDATE blog_posts SET status = 'published', publish_at = coalesce($2::timestamptz, now()) WHERE id = $1`, [postId, at]);
   } else if (publish === false) {
     await query("UPDATE blog_posts SET status = 'draft' WHERE id = $1", [postId]);
-  } else if (isDate(pubDate)) {
-    await query("UPDATE blog_posts SET published_on = $2 WHERE id = $1", [postId, pubDate]);
+  } else if (at) {
+    await query("UPDATE blog_posts SET publish_at = $2::timestamptz WHERE id = $1", [postId, at]);
+  }
+  await query(`UPDATE blog_posts SET ${SET_DATE} WHERE id = $1 AND publish_at IS NOT NULL`, [postId]);
+  const row = await one<{ status: string; later: boolean }>("SELECT status, (publish_at > now()) AS later FROM blog_posts WHERE id = $1", [postId]);
+  revalidatePath("/website");
+  const msg =
+    publish === false ? "Moved back to draft"
+    : row?.status === "published" && row.later ? "Scheduled. It goes on the website by itself at the chosen time (within about 15 minutes)."
+    : publish === true ? "Published. It shows on the website within about 15 minutes."
+    : "Saved";
+  done(`/website/blog/${postId}`, msg);
+}
+
+// ── schedule many drafts at once: N a day, at fixed times ──
+// e.g. start today, 3 a day at 09:00, 13:00, 18:00. Times already past today are skipped.
+export async function scheduleDrafts(f: FormData) {
+  await requireAdmin();
+  const back = "/website/blog";
+  const start = str(f, "start");
+  if (!isDate(start)) fail(back, "Pick a start date");
+  const times = str(f, "times", 200).split(/[\s,]+/).filter(Boolean)
+    .map((t) => t.match(/^(\d{1,2})[:.](\d{2})$/)).filter((m): m is RegExpMatchArray => !!m && +m[1] < 24 && +m[2] < 60)
+    .map((m) => `${m[1].padStart(2, "0")}:${m[2]}`)
+    .sort();
+  const uniq = [...new Set(times)];
+  if (uniq.length === 0 || uniq.length > 10) fail(back, "Give 1 to 10 times a day, like 09:00, 13:00, 18:00");
+  const ids = f.getAll("post").map((v) => parseInt(String(v), 10)).filter((n) => n > 0);
+  const drafts = await query<{ id: number }>(
+    `SELECT id FROM blog_posts WHERE status = 'draft' ${ids.length ? "AND id = ANY($1::int[])" : ""} ORDER BY created_at, id`,
+    ids.length ? [ids] : [],
+  );
+  if (drafts.length === 0) fail(back, "No drafts to schedule");
+
+  const slots: string[] = [];
+  const now = Date.now();
+  for (let day = 0; slots.length < drafts.length && day < 400; day++) {
+    const d = new Date(`${start}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + day);
+    const iso = d.toISOString().slice(0, 10);
+    for (const t of uniq) {
+      const at = `${iso}T${t}:00+05:30`;
+      if (Date.parse(at) > now && slots.length < drafts.length) slots.push(at);
+    }
+  }
+  for (let i = 0; i < drafts.length; i++) {
+    await query(
+      `UPDATE blog_posts SET status = 'published', publish_at = $2::timestamptz,
+              published_on = ($2::timestamptz AT TIME ZONE 'Asia/Kolkata')::date, updated_at = now() WHERE id = $1`,
+      [drafts[i].id, slots[i]],
+    );
   }
   revalidatePath("/website");
-  done(`/website/blog/${postId}`, publish === true ? "Published. It shows on the website after the next update." : publish === false ? "Moved back to draft" : "Saved");
+  done(back, `${drafts.length} post${drafts.length > 1 ? "s" : ""} scheduled, ${uniq.length} a day. Each goes on the website by itself at its time.`);
 }
 
 export async function deletePost(f: FormData) {
@@ -140,14 +191,14 @@ export async function deletePost(f: FormData) {
 
 // ── publish: ask GitHub to pull the content into the website now ──
 // Needs GITHUB_DISPATCH_TOKEN (fine-grained token, suwathe-website repo, "Contents: read and write").
-// Without it, the website still picks up changes on its own within the hour.
+// Without it, the website still picks up changes on its own within about 15 minutes.
 export async function publishNow() {
   const user = await requireAdmin();
   const token = process.env.GITHUB_DISPATCH_TOKEN;
   const repo = process.env.WEBSITE_REPO || "duraibyes/suwathe-website";
   if (!token) {
     await query("INSERT INTO site_publishes (user_id, ok, note) VALUES ($1, FALSE, 'no token')", [user.id]);
-    fail("/website", "Publish-now is not set up yet (GITHUB_DISPATCH_TOKEN). The website will still update on its own within an hour.");
+    fail("/website", "Publish-now is not set up yet (GITHUB_DISPATCH_TOKEN). The website will still update on its own within about 15 minutes.");
   }
   const res = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
     method: "POST",
@@ -156,6 +207,6 @@ export async function publishNow() {
   }).catch(() => null);
   const ok = !!res && res.status === 204;
   await query("INSERT INTO site_publishes (user_id, ok, note) VALUES ($1, $2, $3)", [user.id, ok, ok ? null : `GitHub ${res?.status ?? "unreachable"}`]);
-  if (!ok) fail("/website", `Couldn't reach GitHub (${res?.status ?? "no response"}). The website will still update on its own within an hour.`);
+  if (!ok) fail("/website", `Couldn't reach GitHub (${res?.status ?? "no response"}). The website will still update on its own within about 15 minutes.`);
   done("/website", "Sent. The website updates in about 2–3 minutes.");
 }

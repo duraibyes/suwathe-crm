@@ -30,11 +30,36 @@ export type BlogPost = {
   id: number; slug: string; title: string; excerpt: string; cover_url: string | null; cover_alt: string | null;
   layout: string; body: string; tags: string; status: string; published_on: string | null;
   seo_title: string | null; seo_description: string | null; author: string; updated_at: Date;
+  publish_at: Date | null;
 };
 
 export const getPackages = () => query<SitePackage>("SELECT * FROM site_packages ORDER BY sort, id");
 export const getOffers = () => query<SiteOffer>("SELECT * FROM site_offers ORDER BY starts_on");
-export const getPosts = () => query<BlogPost>("SELECT * FROM blog_posts ORDER BY (status = 'draft') DESC, published_on DESC NULLS FIRST, updated_at DESC");
+// Drafts first, then scheduled posts (soonest first), then live posts (newest first).
+export const getPosts = () =>
+  query<BlogPost>(
+    `SELECT * FROM blog_posts
+      ORDER BY (status = 'draft') DESC, (status = 'published' AND publish_at > now()) DESC,
+               CASE WHEN publish_at > now() THEN publish_at END ASC NULLS LAST,
+               publish_at DESC NULLS FIRST, id ASC`,
+  );
+
+/** A post is "scheduled" when it is set to go live at a time that hasn't come yet. */
+export const isScheduled = (p: Pick<BlogPost, "status" | "publish_at">) =>
+  p.status === "published" && !!p.publish_at && p.publish_at.getTime() > Date.now();
+
+/** Date + time in India, e.g. "24 Nov, 9:00 am". */
+export const istDateTime = (d: Date) =>
+  new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
+
+/** "YYYY-MM-DDTHH:mm" in India time, for <input type="datetime-local">. */
+export const istLocalInput = (d: Date) => {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })
+      .formatToParts(d).map((x) => [x.type, x.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour === "24" ? "00" : parts.hour}:${parts.minute}`;
+};
 
 export const slugify = (s: string) =>
   s.toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim().replace(/[\s_]+/g, "-").replace(/-+/g, "-").slice(0, 80);
@@ -46,7 +71,13 @@ export async function publicContent() {
   const [packages, offers, posts] = await Promise.all([
     getPackages(),
     getOffers(),
-    query<BlogPost>("SELECT * FROM blog_posts WHERE status = 'published' AND published_on <= (now() AT TIME ZONE 'Asia/Kolkata')::date ORDER BY published_on DESC, id DESC"),
+    // Scheduled posts stay hidden until their date and time (India) has passed.
+    query<BlogPost>(
+      `SELECT * FROM blog_posts
+        WHERE status = 'published'
+          AND coalesce(publish_at, (published_on + time '09:00') AT TIME ZONE 'Asia/Kolkata') <= now()
+        ORDER BY coalesce(publish_at, published_on::timestamptz) DESC, id DESC`,
+    ),
   ]);
   return {
     version: 1,
@@ -63,7 +94,7 @@ export async function publicContent() {
     posts: posts.map((p) => ({
       slug: p.slug, title: p.title, excerpt: p.excerpt, cover: p.cover_url ? { src: p.cover_url, alt: p.cover_alt ?? "" } : null,
       layout: p.layout, body: p.body, tags: lines(p.tags.replace(/,/g, "\n")), publishedOn: p.published_on,
-      updatedOn: p.updated_at.toISOString().slice(0, 10), seoTitle: p.seo_title, seoDescription: p.seo_description, author: p.author,
+      updatedOn: istLocalInput(p.publish_at && p.publish_at > p.updated_at ? p.publish_at : p.updated_at).slice(0, 10), seoTitle: p.seo_title, seoDescription: p.seo_description, author: p.author,
     })),
   };
 }

@@ -2,6 +2,7 @@
 // Runs automatically before every build (see package.json), and is safe to run many times.
 // Needs DATABASE_URL (Neon connection string). Without it, it does nothing.
 import pg from "pg";
+import { seedPosts } from "./blog-seed-2026-11.mjs";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -13,6 +14,7 @@ const local = /localhost|127\.0\.0\.1|host=\/tmp/.test(url);
 const client = new pg.Client({ connectionString: url, ssl: local ? false : { rejectUnauthorized: true } });
 
 // Each step runs once, in order. Add new steps at the end; never edit old ones.
+// A step is SQL text, or a function that gets the database client (for data with lots of text).
 const steps = [
   [
     "001_initial",
@@ -229,6 +231,33 @@ const steps = [
      WHERE id = 'ecom';
     `,
   ],
+  [
+    "006_blog_schedule",
+    `
+    -- 23 Nov 2026: posts can be scheduled for a date AND time (India time).
+    -- A published post with publish_at in the future stays hidden until then.
+    -- published_on is kept as the India date of publish_at (shown on the site).
+    ALTER TABLE blog_posts ADD COLUMN publish_at TIMESTAMPTZ;
+    UPDATE blog_posts SET publish_at = (published_on + time '09:00') AT TIME ZONE 'Asia/Kolkata'
+     WHERE status = 'published' AND published_on IS NOT NULL;
+    CREATE INDEX blog_posts_publish_at_idx ON blog_posts(status, publish_at);
+    `,
+  ],
+  [
+    "007_blog_first_ten_posts",
+    // 23 Nov 2026: the first 10 posts, already scheduled (3 a day). Skips any
+    // web address that already exists, so nothing written in the CRM is overwritten.
+    async (db) => {
+      for (const p of seedPosts) {
+        await db.query(
+          `INSERT INTO blog_posts (slug, title, excerpt, layout, body, tags, status, published_on, publish_at, seo_title, seo_description, author)
+           VALUES ($1, $2, $3, $4, $5, $6, 'published', ($7::timestamptz AT TIME ZONE 'Asia/Kolkata')::date, $7::timestamptz, $8, $9, 'Durairaj S')
+           ON CONFLICT (slug) DO NOTHING`,
+          [p.slug, p.title, p.excerpt, p.layout, p.body.trim(), p.tags, p.at, p.seoTitle, p.seoDescription],
+        );
+      }
+    },
+  ],
 ];
 
 // First admin (only used on an empty database). Signs in with the mobile number.
@@ -246,7 +275,8 @@ try {
   for (const [id, sql] of steps) {
     if (done.has(id)) continue;
     await client.query("BEGIN");
-    await client.query(sql);
+    if (typeof sql === "function") await sql(client);
+    else await client.query(sql);
     await client.query("INSERT INTO schema_migrations (id) VALUES ($1)", [id]);
     await client.query("COMMIT");
     console.log(`[migrate] applied ${id}`);
