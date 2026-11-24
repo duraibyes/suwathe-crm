@@ -5,7 +5,7 @@ export const metadata: Metadata = {
   title: { default: "Suwathe CRM", template: "%s · Suwathe CRM" },
   description: "Leads, follow-ups, payments and renewals for Suwathe Tech Solutions.",
   robots: { index: false, follow: false },
-  icons: { icon: [{ url: "/icon-192.png", sizes: "192x192" }, { url: "/favicon-48.png", sizes: "48x48" }], apple: "/apple-icon.png" },
+  icons: { icon: [{ url: "/favicon.ico", sizes: "16x16 32x32 48x48" }, { url: "/icon-192.png", sizes: "192x192" }, { url: "/favicon-48.png", sizes: "48x48" }], apple: "/apple-icon.png" },
   appleWebApp: { capable: true, title: "Suwathe CRM", statusBarStyle: "default" },
 };
 
