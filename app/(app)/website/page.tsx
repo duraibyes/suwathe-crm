@@ -48,7 +48,7 @@ export default async function WebsiteHome({ searchParams }: { searchParams: Prom
       <section className="card p-5">
         <h2 className="text-lg font-extrabold">Update the website</h2>
         <p className="mt-1 text-sm text-muted">
-          The website checks for changes here every 15 minutes and updates itself (scheduled posts too). Press the button to update it now (about 2–3 minutes).
+          The website updates itself at 9:03 am, 1:03, 3:03 and 6:03 pm (scheduled posts too). Saving a live post, price or offer, or pressing this button, updates it in about 3 minutes.
         </p>
         <form action={publishNow} className="mt-4">
           <button className="btn">Publish changes now</button>

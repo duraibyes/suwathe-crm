@@ -19,6 +19,24 @@ const istAt = (v: string) => (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) && !isNa
 const done = (path: string, msg: string) => redirect(`${path}?saved=${encodeURIComponent(msg)}`);
 const fail = (path: string, msg: string) => redirect(`${path}?error=${encodeURIComponent(msg)}`);
 
+// Ask GitHub to copy the CRM content into the website now (about 2–3 minutes).
+// Needs GITHUB_DISPATCH_TOKEN; returns false when it isn't set or GitHub can't be reached.
+async function pingWebsite(): Promise<boolean> {
+  const token = process.env.GITHUB_DISPATCH_TOKEN;
+  if (!token) return false;
+  const repo = process.env.WEBSITE_REPO || "duraibyes/suwathe-website";
+  const res = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "suwathe-crm" },
+    body: JSON.stringify({ event_type: "content-updated" }),
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
+  return !!res && res.status === 204;
+}
+// What to tell the user after a change that should reach the website.
+const LATER = "The website picks it up at the next update (9:03 am, 1:03, 3:03 or 6:03 pm), or press \"Publish changes now\" on the Website page.";
+const live = async () => ((await pingWebsite()) ? "It shows on the website in about 3 minutes." : LATER);
+
 // ── packages ───────────────────────────────────────────
 export async function savePackage(f: FormData) {
   const user = await requireAdmin();
@@ -35,7 +53,7 @@ export async function savePackage(f: FormData) {
     [id, name, str(f, "name_ta", 80), price, f.get("starting_at") === "on", str(f, "for_text", 300), str(f, "includes", 3000), str(f, "days", 60), popular, user.id],
   );
   revalidatePath("/website");
-  done("/website/packages", `${name} saved`);
+  done("/website/packages", `${name} saved. ${await live()}`);
 }
 
 // ── offers ─────────────────────────────────────────────
@@ -73,14 +91,14 @@ export async function saveOffer(f: FormData) {
     );
   }
   revalidatePath("/website");
-  done("/website/offers", "Offer saved");
+  done("/website/offers", `Offer saved. ${await live()}`);
 }
 
 export async function deleteOffer(f: FormData) {
   await requireAdmin();
   const id = int(f, "id");
   if (id) await query("DELETE FROM site_offers WHERE id = $1", [id]);
-  done("/website/offers", "Offer deleted");
+  done("/website/offers", `Offer deleted. ${await live()}`);
 }
 
 // ── blog ───────────────────────────────────────────────
@@ -148,10 +166,14 @@ export async function savePost(f: FormData) {
   await query(`UPDATE blog_posts SET ${SET_DATE} WHERE id = $1 AND publish_at IS NOT NULL`, [postId]);
   const row = await one<{ status: string; later: boolean }>("SELECT status, (publish_at > now()) AS later FROM blog_posts WHERE id = $1", [postId]);
   revalidatePath("/website");
+  // A live post (or one just taken down) is sent to the website straight away.
+  const isLive = row?.status === "published" && !row.later;
+  const note = isLive || publish === false ? ` ${await live()}` : "";
   const msg =
-    publish === false ? "Moved back to draft"
-    : row?.status === "published" && row.later ? "Scheduled. It goes on the website by itself at the chosen time (within about 15 minutes)."
-    : publish === true ? "Published. It shows on the website within about 15 minutes."
+    publish === false ? `Moved back to draft.${note}`
+    : row?.status === "published" && row.later ? "Scheduled. It goes on the website by itself at the next update after the chosen time (9:03 am, 1:03, 3:03 or 6:03 pm)."
+    : publish === true ? `Published.${note}`
+    : isLive ? `Saved.${note}`
     : "Saved";
   done(`/website/blog/${postId}`, msg);
 }
@@ -202,19 +224,19 @@ export async function deletePost(f: FormData) {
   await requireAdmin();
   const id = int(f, "id");
   if (id) await query("DELETE FROM blog_posts WHERE id = $1", [id]);
-  done("/website/blog", "Post deleted");
+  done("/website/blog", `Post deleted. ${await live()}`);
 }
 
 // ── publish: ask GitHub to pull the content into the website now ──
 // Needs GITHUB_DISPATCH_TOKEN (fine-grained token, suwathe-website repo, "Contents: read and write").
-// Without it, the website still picks up changes on its own within about 15 minutes.
+// Without it, the website still picks up changes at its next scheduled update.
 export async function publishNow() {
   const user = await requireAdmin();
   const token = process.env.GITHUB_DISPATCH_TOKEN;
   const repo = process.env.WEBSITE_REPO || "duraibyes/suwathe-website";
   if (!token) {
     await query("INSERT INTO site_publishes (user_id, ok, note) VALUES ($1, FALSE, 'no token')", [user.id]);
-    fail("/website", "Publish-now is not set up yet (GITHUB_DISPATCH_TOKEN). The website will still update on its own within about 15 minutes.");
+    fail("/website", "Publish-now is not set up yet (GITHUB_DISPATCH_TOKEN in Vercel). The website still updates by itself at 9:03 am, 1:03, 3:03 and 6:03 pm.");
   }
   const res = await fetch(`https://api.github.com/repos/${repo}/dispatches`, {
     method: "POST",
@@ -223,6 +245,6 @@ export async function publishNow() {
   }).catch(() => null);
   const ok = !!res && res.status === 204;
   await query("INSERT INTO site_publishes (user_id, ok, note) VALUES ($1, $2, $3)", [user.id, ok, ok ? null : `GitHub ${res?.status ?? "unreachable"}`]);
-  if (!ok) fail("/website", `Couldn't reach GitHub (${res?.status ?? "no response"}). The website will still update on its own within about 15 minutes.`);
+  if (!ok) fail("/website", `Couldn't reach GitHub (${res?.status ?? "no response"}). The website still updates by itself at 9:03 am, 1:03, 3:03 and 6:03 pm.`);
   done("/website", "Sent. The website updates in about 2–3 minutes.");
 }
