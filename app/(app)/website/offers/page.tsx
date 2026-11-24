@@ -22,6 +22,7 @@ function OfferForm({ o }: { o?: SiteOffer }) {
           <select id={`fe-${k}`} name="festival" defaultValue={o?.festival ?? "diwali"} className="field">
             {FESTIVALS.map((f) => <option key={f.id} value={f.id}>{f.en}</option>)}
           </select>
+          <p className="mt-1 text-xs text-muted">Chutty&apos;s scene: {FESTIVALS.map((f) => `${f.en} – ${f.scene}`).join(" · ")}</p>
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div><label className="label" htmlFor={`s-${k}`}>Starts</label><input id={`s-${k}`} type="date" name="starts_on" defaultValue={o?.starts_on} required className="field" /></div>

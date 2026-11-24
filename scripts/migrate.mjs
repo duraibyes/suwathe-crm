@@ -331,6 +331,24 @@ const steps = [
       }
     },
   ],
+  [
+    "011_karthigai_deepam",
+    // 24 Nov 2026: Karthigai Deepam joins the festivals (Chutty lights lamps).
+    // First offer: 24–28 Nov 2026 with the same percentages as the Christmas offer.
+    async (db) => {
+      await db.query("ALTER TABLE site_offers DROP CONSTRAINT IF EXISTS site_offers_festival_check");
+      await db.query("ALTER TABLE site_offers ADD CONSTRAINT site_offers_festival_check CHECK (festival IN ('diwali', 'karthigai', 'christmas', 'newyear', 'pongal'))");
+      const { rows } = await db.query("SELECT pct_starter, pct_business, pct_ecom, pct_software, pct_school FROM site_offers WHERE festival = 'christmas' ORDER BY starts_on DESC LIMIT 1");
+      const x = rows[0] ?? { pct_starter: 5, pct_business: 10, pct_ecom: 10, pct_software: 5, pct_school: 5 };
+      const clash = await db.query("SELECT 1 FROM site_offers WHERE active AND starts_on <= '2026-11-28' AND ends_on >= '2026-11-24'");
+      await db.query(
+        `INSERT INTO site_offers (festival, name, name_ta, greeting, greeting_ta, starts_on, ends_on, pct_starter, pct_business, pct_ecom, pct_software, pct_school, active)
+         VALUES ('karthigai', 'Karthigai Deepam offer', 'கார்த்திகை தீபச் சலுகை', 'Happy Karthigai Deepam', 'இனிய கார்த்திகை தீப நல்வாழ்த்துகள்',
+                 '2026-11-24', '2026-11-28', $1, $2, $3, $4, $5, $6)`,
+        [x.pct_starter, x.pct_business, x.pct_ecom, x.pct_software, x.pct_school, clash.rowCount === 0],
+      );
+    },
+  ],
 ];
 
 // First admin (only used on an empty database). Signs in with the mobile number.

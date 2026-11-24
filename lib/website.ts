@@ -6,10 +6,11 @@ import { query } from "./db";
 
 export const PACKAGE_IDS = ["starter", "business", "ecom", "software"] as const;
 export const FESTIVALS = [
-  { id: "diwali", en: "Diwali" },
-  { id: "christmas", en: "Christmas" },
-  { id: "newyear", en: "New Year" },
-  { id: "pongal", en: "Pongal" },
+  { id: "diwali", en: "Diwali", scene: "Crackers: bomb, flower pot, rocket, chakkaram" },
+  { id: "karthigai", en: "Karthigai Deepam", scene: "She lights a tray of agal vilakku and a row of lamps; Maha Deepam on the hill" },
+  { id: "christmas", en: "Christmas", scene: "Santa dress, she cuts a cake, snow" },
+  { id: "newyear", en: "New Year", scene: "Party dress, party popper, confetti" },
+  { id: "pongal", en: "Pongal", scene: "Decorations and greeting only (scene not made yet)" },
 ] as const;
 export const LAYOUTS = [
   { id: "classic", en: "Classic", desc: "Clean reading column with the cover photo on top. Best for most posts." },
