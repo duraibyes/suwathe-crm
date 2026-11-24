@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
 import { one, query } from "@/lib/db";
-import { FESTIVALS, LAYOUTS, PACKAGE_IDS, slugify } from "@/lib/website";
+import { FESTIVALS, LAYOUTS, MEDIA_PATH, PACKAGE_IDS, slugify, type PostImage } from "@/lib/website";
 
 // Every action here is admin-only and changes website content.
 const str = (f: FormData, k: string, max = 2000) => String(f.get(k) ?? "").trim().slice(0, max);
@@ -84,6 +84,20 @@ export async function deleteOffer(f: FormData) {
 }
 
 // ── blog ───────────────────────────────────────────────
+// The editor sends the post's photos as JSON: [{ id, alt, caption }], in order.
+// Keeps only photos that really exist; at most 30.
+async function readImages(json: string): Promise<PostImage[]> {
+  let raw: unknown;
+  try { raw = JSON.parse(json || "[]"); } catch { return []; }
+  if (!Array.isArray(raw)) return [];
+  const list = raw.slice(0, 30)
+    .map((x) => ({ id: Number(x?.id), alt: String(x?.alt ?? "").trim().slice(0, 200), caption: String(x?.caption ?? "").trim().slice(0, 300) }))
+    .filter((x, i, a) => Number.isInteger(x.id) && x.id > 0 && a.findIndex((y) => y.id === x.id) === i);
+  if (!list.length) return [];
+  const found = new Set((await query<{ id: number }>("SELECT id FROM blog_media WHERE id = ANY($1::int[])", [list.map((x) => x.id)])).map((r) => r.id));
+  return list.filter((x) => found.has(x.id));
+}
+
 export async function savePost(f: FormData) {
   const user = await requireAdmin();
   const id = int(f, "id");
@@ -95,7 +109,8 @@ export async function savePost(f: FormData) {
   const layout = LAYOUTS.some((l) => l.id === str(f, "layout")) ? str(f, "layout") : "classic";
   const publish = str(f, "intent") === "publish" ? true : str(f, "intent") === "draft" ? false : null;
   const cover = str(f, "cover_url", 500);
-  if (cover && !/^https:\/\//.test(cover)) fail(back, "The cover photo link must start with https://");
+  if (cover && !/^https:\/\//.test(cover) && !new RegExp(`^${MEDIA_PATH}\\d+$`).test(cover)) fail(back, "The cover photo link must start with https://");
+  const images = await readImages(str(f, "images", 20000));
   const at = istAt(str(f, "publish_at"));
   const taken = await one<{ id: number }>("SELECT id FROM blog_posts WHERE slug = $1 AND id <> coalesce($2, -1)", [slug, id]);
   if (taken) fail(back, "Another post already uses that web address");
@@ -103,18 +118,19 @@ export async function savePost(f: FormData) {
   const vals = [
     slug, title, str(f, "excerpt", 400), cover || null, str(f, "cover_alt", 200) || null, layout, str(f, "body", 60000),
     str(f, "tags", 300), str(f, "seo_title", 120) || null, str(f, "seo_description", 300) || null, str(f, "author", 80) || "Durairaj S", user.id,
+    JSON.stringify(images),
   ];
   let postId = id;
   if (id) {
     await query(
       `UPDATE blog_posts SET slug=$2, title=$3, excerpt=$4, cover_url=$5, cover_alt=$6, layout=$7, body=$8, tags=$9,
-              seo_title=$10, seo_description=$11, author=$12, updated_by=$13, updated_at=now() WHERE id=$1`,
+              seo_title=$10, seo_description=$11, author=$12, updated_by=$13, images=$14::jsonb, updated_at=now() WHERE id=$1`,
       [id, ...vals],
     );
   } else {
     const row = await one<{ id: number }>(
-      `INSERT INTO blog_posts (slug, title, excerpt, cover_url, cover_alt, layout, body, tags, seo_title, seo_description, author, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+      `INSERT INTO blog_posts (slug, title, excerpt, cover_url, cover_alt, layout, body, tags, seo_title, seo_description, author, updated_by, images)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb) RETURNING id`,
       vals,
     );
     postId = row!.id;

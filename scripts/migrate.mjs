@@ -4,6 +4,8 @@
 import pg from "pg";
 import { seedPosts } from "./blog-seed-2026-11.mjs";
 import { seedPostsB } from "./blog-seed-2026-11b.mjs";
+import { schoolShowcase } from "./blog-school-showcase-2026-11.mjs";
+import { readFileSync } from "node:fs";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -269,6 +271,62 @@ const steps = [
            VALUES ($1, $2, $3, $4, $5, $6, 'published', ($7::timestamptz AT TIME ZONE 'Asia/Kolkata')::date, $7::timestamptz, $8, $9, 'Durairaj S')
            ON CONFLICT (slug) DO NOTHING`,
           [p.slug, p.title, p.excerpt, p.layout, p.body.trim(), p.tags, p.at, p.seoTitle, p.seoDescription],
+        );
+      }
+    },
+  ],
+  [
+    "009_blog_media",
+    `
+    -- 24 Nov 2026: photos uploaded from the CRM (no more pasting links).
+    -- Stored here and served publicly at /api/public/media/<id>; the website
+    -- copies them into its own public/blog-media/ folder when it syncs.
+    CREATE TABLE blog_media (
+      id SERIAL PRIMARY KEY,
+      data BYTEA NOT NULL,
+      mime TEXT NOT NULL,
+      width INT,
+      height INT,
+      bytes INT NOT NULL,
+      name TEXT,
+      created_by INT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    -- Photos of a post, in order: [{ "id": 3, "alt": "...", "caption": "..." }]
+    ALTER TABLE blog_posts ADD COLUMN images JSONB NOT NULL DEFAULT '[]'::jsonb;
+    -- New design: Zig-zag showcase (photos and text side by side)
+    ALTER TABLE blog_posts DROP CONSTRAINT IF EXISTS blog_posts_layout_check;
+    ALTER TABLE blog_posts ADD CONSTRAINT blog_posts_layout_check CHECK (layout IN ('classic', 'magazine', 'guide', 'showcase'));
+    `,
+  ],
+  [
+    "010_school_post_showcase",
+    // 24 Nov 2026: the school post becomes a Zig-zag showcase with 4 photos.
+    // Updates it by web address (or adds it, published now, if it was deleted).
+    async (db) => {
+      const s = schoolShowcase;
+      const imgs = [];
+      for (const im of s.images) {
+        const data = readFileSync(new URL(`./seed-media/${im.file}`, import.meta.url));
+        const { rows } = await db.query(
+          "INSERT INTO blog_media (data, mime, width, height, bytes, name) VALUES ($1, 'image/webp', 1254, 1254, $2, $3) RETURNING id",
+          [data, data.length, im.file],
+        );
+        imgs.push({ id: rows[0].id, alt: im.alt, caption: im.caption, file: im.file });
+      }
+      const coverId = imgs.find((i) => i.file === s.cover.file).id;
+      for (const i of imgs) delete i.file;
+      const vals = [s.slug, s.title, s.excerpt, `/api/public/media/${coverId}`, s.cover.alt, s.layout, s.body.trim(), s.tags, s.seoTitle, s.seoDescription, JSON.stringify(imgs)];
+      const upd = await db.query(
+        `UPDATE blog_posts SET title=$2, excerpt=$3, cover_url=$4, cover_alt=$5, layout=$6, body=$7, tags=$8,
+                seo_title=$9, seo_description=$10, images=$11::jsonb, updated_at=now() WHERE slug=$1`,
+        vals,
+      );
+      if (upd.rowCount === 0) {
+        await db.query(
+          `INSERT INTO blog_posts (slug, title, excerpt, cover_url, cover_alt, layout, body, tags, seo_title, seo_description, images, status, publish_at, published_on, author)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,'published', now(), (now() AT TIME ZONE 'Asia/Kolkata')::date, 'Durairaj S')`,
+          vals,
         );
       }
     },

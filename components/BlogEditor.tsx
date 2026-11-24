@@ -1,13 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import { deletePost, savePost } from "@/app/website-actions";
+import BlogPhotos, { uploadPhoto, photoUrl, type Photo } from "@/components/BlogPhotos";
 
 type Post = {
   id: number; slug: string; title: string; excerpt: string; cover_url: string | null; cover_alt: string | null;
   layout: string; body: string; tags: string; status: string; published_on: string | null;
-  seo_title: string | null; seo_description: string | null; author: string;
+  seo_title: string | null; seo_description: string | null; author: string; images?: Photo[];
 };
 // When the post goes live: "YYYY-MM-DDTHH:mm" in India time (or ""), and a friendly label.
 type When = { local: string; label: string | null; scheduled: boolean };
@@ -32,6 +33,17 @@ function LayoutThumb({ id }: { id: string }) {
         {[42, 49, 56, 63, 70].map((y) => <rect key={y} x="8" y={y} width="66" height="3" rx="1.5" fill={b} />)}
         <rect x="82" y="40" width="30" height="34" rx="4" fill={d} opacity="0.85" />
       </>)}
+      {id === "showcase" && (<>
+        {[0, 1, 2].map((r) => {
+          const y = 6 + r * 25, left = r % 2 === 0;
+          return (<g key={r}>
+            <rect x={left ? 8 : 66} y={y} width="46" height="20" rx="3" fill={b} />
+            <rect x={left ? 60 : 8} y={y + 3} width="40" height="4" rx="2" fill={d} />
+            <rect x={left ? 60 : 8} y={y + 10} width="52" height="3" rx="1.5" fill={b} />
+            <rect x={left ? 60 : 8} y={y + 15} width="44" height="3" rx="1.5" fill={b} />
+          </g>);
+        })}
+      </>)}
       {id === "guide" && (<>
         <rect x="8" y="8" width="26" height="40" rx="3" fill={b} opacity="0.7" />
         {[14, 22, 30, 38].map((y) => <rect key={y} x="12" y={y} width="18" height="3" rx="1.5" fill={d} />)}
@@ -51,6 +63,31 @@ export default function BlogEditor({ post, when, layouts, saved, error }: { post
   const [slugTouched, setSlugTouched] = useState(!!post);
   const [layout, setLayout] = useState(post?.layout ?? "classic");
   const [body, setBody] = useState(post?.body ?? "");
+  const [photos, setPhotos] = useState<Photo[]>(post?.images ?? []);
+  const [cover, setCover] = useState(post?.cover_url ?? "");
+  const [coverAlt, setCoverAlt] = useState(post?.cover_alt ?? "");
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [coverErr, setCoverErr] = useState("");
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
+  // Put markdown (e.g. a photo) where the cursor is in the post text.
+  const insert = (md: string) => {
+    const el = bodyRef.current;
+    setTab("write");
+    const at = el ? el.selectionEnd : body.length;
+    const next = `${body.slice(0, at)}\n\n${md}\n\n${body.slice(at)}`.replace(/\n{3,}/g, "\n\n");
+    setBody(next);
+    requestAnimationFrame(() => { el?.focus(); const pos = next.indexOf(md) + md.length; el?.setSelectionRange(pos, pos); });
+  };
+  async function uploadCover(f?: File) {
+    if (!f) return;
+    setCoverErr(""); setCoverBusy(true);
+    try {
+      const id = await uploadPhoto(f);
+      setCover(photoUrl(id));
+      if (!coverAlt) setCoverAlt(f.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " "));
+    } catch (e) { setCoverErr((e as Error).message); }
+    setCoverBusy(false);
+  }
   const [tab, setTab] = useState<"write" | "preview">("write");
   const html = useMemo(() => (tab === "preview" ? (marked.parse(body || "_Nothing written yet._", { async: false }) as string) : ""), [tab, body]);
   const shownSlug = slugTouched ? slug : slugify(title);
@@ -83,7 +120,7 @@ export default function BlogEditor({ post, when, layouts, saved, error }: { post
       <section className="card p-5">
         <fieldset>
           <legend className="text-lg font-extrabold">Design</legend>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {layouts.map((l) => (
               <label key={l.id} className={`cursor-pointer rounded-2xl p-3 ring-2 transition ${layout === l.id ? "bg-brand-soft ring-brand" : "bg-paper ring-transparent hover:ring-line"}`}>
                 <input type="radio" name="layout" value={l.id} checked={layout === l.id} onChange={() => setLayout(l.id)} className="sr-only" />
@@ -97,14 +134,30 @@ export default function BlogEditor({ post, when, layouts, saved, error }: { post
       </section>
 
       <section className="card space-y-4 p-5">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="label" htmlFor="cover_url">Cover photo link (https://…)</label>
-            <input id="cover_url" name="cover_url" type="url" defaultValue={post?.cover_url ?? ""} className="field" placeholder="https://images.unsplash.com/…" />
+        <div className="grid gap-4 sm:grid-cols-[9rem_1fr]">
+          <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-paper ring-1 ring-line sm:aspect-square">
+            {cover ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={cover} alt="" className="h-full w-full object-cover" />
+            ) : <span className="grid h-full place-items-center text-xs text-muted">No cover yet</span>}
           </div>
-          <div>
-            <label className="label" htmlFor="cover_alt">Describe the photo</label>
-            <input id="cover_alt" name="cover_alt" defaultValue={post?.cover_alt ?? ""} className="field" placeholder="Doctor talking to a patient" />
+          <div className="space-y-3">
+            <div>
+              <label className="label" htmlFor="cover_url">Cover photo</label>
+              <div className="flex flex-wrap gap-2">
+                <label className={`btn cursor-pointer ${coverBusy ? "opacity-60" : ""}`}>
+                  {coverBusy ? "Uploading…" : "Upload cover"}
+                  <input type="file" accept="image/*" hidden disabled={coverBusy} onChange={(e) => { uploadCover(e.target.files?.[0]); e.target.value = ""; }} />
+                </label>
+                {cover && <button type="button" onClick={() => setCover("")} className="btn-ghost">Remove</button>}
+              </div>
+              <input id="cover_url" name="cover_url" type="text" inputMode="url" value={cover} onChange={(e) => setCover(e.target.value.trim())} className="field mt-2 text-sm" placeholder="…or paste a photo link (https://…)" />
+              {coverErr && <p role="alert" className="mt-1 text-sm font-semibold text-rose-700">{coverErr}</p>}
+            </div>
+            <div>
+              <label className="label" htmlFor="cover_alt">Describe the photo</label>
+              <input id="cover_alt" name="cover_alt" value={coverAlt} onChange={(e) => setCoverAlt(e.target.value)} maxLength={200} className="field" placeholder="Doctor talking to a patient" />
+            </div>
           </div>
         </div>
 
@@ -119,14 +172,21 @@ export default function BlogEditor({ post, when, layouts, saved, error }: { post
               ))}
             </div>
           </div>
-          <textarea name="body" value={body} onChange={(e) => setBody(e.target.value)} rows={18} hidden={tab !== "write"} className="field font-mono text-sm leading-relaxed"
+          <textarea ref={bodyRef} name="body" value={body} onChange={(e) => setBody(e.target.value)} rows={18} hidden={tab !== "write"} className="field font-mono text-sm leading-relaxed"
             placeholder={"## A heading\n\nA paragraph. **Bold**, *italic*, [a link](https://…).\n\n- a list item\n- another\n\n![photo description](https://…)"} />
+          {tab === "preview" && layout === "showcase" && photos.length > 0 && (
+            <p className="mb-2 rounded-xl bg-brand-soft px-3 py-2 text-xs font-semibold text-brand">On the website, photo 1 sits beside the first ## section, photo 2 beside the second, and so on, swapping sides.</p>
+          )}
           {tab === "preview" && <div className="blog-preview min-h-64 rounded-xl bg-white p-5 ring-1 ring-line" dangerouslySetInnerHTML={{ __html: html }} />}
           <p className="mt-2 text-xs text-muted">
             Use <code>## Heading</code> for sections (the Step-by-step design numbers them), <code>**bold**</code>, <code>- list</code>, <code>[text](link)</code>, <code>![photo](link)</code>.
           </p>
         </div>
       </section>
+
+      <input type="hidden" name="images" value={JSON.stringify(photos)} />
+      <BlogPhotos photos={photos} setPhotos={setPhotos} coverUrl={cover} layout={layout} onInsert={insert}
+        onCover={(url, alt) => { setCover(url); if (url) setCoverAlt(alt); }} />
 
       <details className="card p-5">
         <summary className="cursor-pointer font-extrabold">Google & details</summary>

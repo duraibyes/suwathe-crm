@@ -15,7 +15,13 @@ export const LAYOUTS = [
   { id: "classic", en: "Classic", desc: "Clean reading column with the cover photo on top. Best for most posts." },
   { id: "magazine", en: "Magazine", desc: "Big photo with the title over it, and a side panel with a call to action." },
   { id: "guide", en: "Step-by-step guide", desc: "Numbered sections with a table of contents. Best for how-to posts." },
+  { id: "showcase", en: "Zig-zag showcase", desc: "Photos and text side by side, swapping sides each section. Best for posts with several photos." },
 ] as const;
+
+/** A photo attached to a post (stored in blog_media). */
+export type PostImage = { id: number; alt: string; caption: string };
+export const MEDIA_PATH = "/api/public/media/";
+export const mediaUrl = (id: number) => `${MEDIA_PATH}${id}`;
 
 export type SitePackage = {
   id: string; name: string; name_ta: string; price: number; starting_at: boolean; for_text: string;
@@ -30,7 +36,7 @@ export type BlogPost = {
   id: number; slug: string; title: string; excerpt: string; cover_url: string | null; cover_alt: string | null;
   layout: string; body: string; tags: string; status: string; published_on: string | null;
   seo_title: string | null; seo_description: string | null; author: string; updated_at: Date;
-  publish_at: Date | null;
+  publish_at: Date | null; images: PostImage[];
 };
 
 export const getPackages = () => query<SitePackage>("SELECT * FROM site_packages ORDER BY sort, id");
@@ -66,8 +72,9 @@ export const slugify = (s: string) =>
 
 const lines = (t: string) => t.split("\n").map((l) => l.trim()).filter(Boolean);
 
-/** What the public website receives. Only published posts; no internal ids or users. */
-export async function publicContent() {
+/** What the public website receives. Only published posts; no internal ids or users.
+ *  `origin` is this CRM's address, so photo links work from the website. */
+export async function publicContent(origin: string) {
   const [packages, offers, posts] = await Promise.all([
     getPackages(),
     getOffers(),
@@ -79,6 +86,16 @@ export async function publicContent() {
         ORDER BY coalesce(publish_at, published_on::timestamptz) DESC, id DESC`,
     ),
   ]);
+  // Photo sizes, so the website can reserve space before they load.
+  const ids = posts.flatMap((p) => (p.images ?? []).map((i) => i.id));
+  const sizes = new Map(
+    ids.length
+      ? (await query<{ id: number; width: number | null; height: number | null }>("SELECT id, width, height FROM blog_media WHERE id = ANY($1::int[])", [ids])).map((m) => [m.id, m])
+      : [],
+  );
+  // Uploaded photos are saved as "/api/public/media/12"; the website needs the full address.
+  const abs = (u: string) => (u.startsWith(MEDIA_PATH) ? `${origin}${u}` : u);
+  const absBody = (b: string) => b.replaceAll(`](${MEDIA_PATH}`, `](${origin}${MEDIA_PATH}`);
   return {
     version: 1,
     packages: packages.map((p) => ({
@@ -92,8 +109,12 @@ export async function publicContent() {
       schoolPercent: o.pct_school,
     })),
     posts: posts.map((p) => ({
-      slug: p.slug, title: p.title, excerpt: p.excerpt, cover: p.cover_url ? { src: p.cover_url, alt: p.cover_alt ?? "" } : null,
-      layout: p.layout, body: p.body, tags: lines(p.tags.replace(/,/g, "\n")), publishedOn: p.published_on,
+      slug: p.slug, title: p.title, excerpt: p.excerpt, cover: p.cover_url ? { src: abs(p.cover_url), alt: p.cover_alt ?? "" } : null,
+      layout: p.layout, body: absBody(p.body),
+      images: (p.images ?? []).filter((i) => sizes.has(i.id)).map((i) => ({
+        src: `${origin}${mediaUrl(i.id)}`, alt: i.alt, caption: i.caption,
+        width: sizes.get(i.id)!.width, height: sizes.get(i.id)!.height,
+      })), tags: lines(p.tags.replace(/,/g, "\n")), publishedOn: p.published_on,
       updatedOn: istLocalInput(p.publish_at && p.publish_at > p.updated_at ? p.publish_at : p.updated_at).slice(0, 10), seoTitle: p.seo_title, seoDescription: p.seo_description, author: p.author,
     })),
   };

@@ -4,8 +4,8 @@ import { publicContent } from "@/lib/website";
 // published blog posts). Nothing private is included.
 export const dynamic = "force-dynamic";
 
-export async function GET() {
-  const body = await publicContent();
+export async function GET(request: Request) {
+  const body = await publicContent(new URL(request.url).origin);
   return Response.json(body, {
     headers: {
       "Access-Control-Allow-Origin": "*",
